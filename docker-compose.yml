@@ -1,0 +1,20 @@
+services:
+  configurator:
+     build:
+       dockerfile: Dockerfile
+       context: .
+     command: npm run dev
+     ports:
+       - "5000:5000"
+     environment:
+       NODE_ENV: development
+       PORT: 5000
+     volumes:
+       - ./src:/app/src
+     networks:
+       - my-proxy-net
+
+networks:
+  my-proxy-net:
+    name: energet-network
+    external: true
