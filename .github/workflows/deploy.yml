@@ -3,7 +3,7 @@ name: Deploy Frontend
 on: [push]
 
 jobs:
-  deploy:
+  notify-commit:
     runs-on: ubuntu-latest
     steps:
       - name: Notify github action on Telegram
@@ -13,6 +13,9 @@ jobs:
           chat_id: '${{ secrets.TELEGRAM_CHAT_ID }}'
           topic_id: '${{ secrets.TELEGRAM_TOPIC_ID }}'
 
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
       - name: Pull code
         uses: appleboy/ssh-action@master
         with:
