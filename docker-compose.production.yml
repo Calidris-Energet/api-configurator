@@ -1,0 +1,31 @@
+services:
+  configurator:
+     build:
+       dockerfile: Dockerfile
+       context: .
+     command: npm run dev
+     ports:
+       - "5000:5000"
+     environment:
+       NODE_ENV: development
+       PORT: 5000
+     volumes:
+       - ./src:/app/src
+     networks:
+       - my-proxy-net
+
+  telegram-notifier:
+    image: lorcas/docker-telegram-notifier:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      TELEGRAM_NOTIFIER_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_NOTIFIER_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      TELEGRAM_NOTIFIER_TOPIC_ID: ${TELEGRAM_TOPIC_ID}
+    labels:
+      telegram-notifier.monitor: false
+
+networks:
+  my-proxy-net:
+    name: energet-network
+    external: true
