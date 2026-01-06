@@ -49,9 +49,6 @@
               text: |
                 🔔 Backend (configurator)
                 ✅ Изменения успешно задеплоены
-                
-                🔗 Ссылка 🔗
-                https://energet.shop/
               parse_mode: 'markdown'
 
       rescue:
