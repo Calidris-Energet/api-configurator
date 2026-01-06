@@ -1,57 +1,56 @@
-name: Deploy Frontend
+name: Deploy API Core
 
-on: [push]
+on: push
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Pull code
-        uses: appleboy/ssh-action@master
+      - name: Checkout repository
+        uses: actions/checkout@master
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
-          port: ${{ secrets.SERVER_PORT }}
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            cd /home/energet/api-configurator/
-            sudo git fetch || exit 1
-            sudo git checkout ${{ github.ref_name }} || exit 1
-            sudo git pull || exit 1
+          python-version: "3.12"
 
-      - name: Build & Restart service
-        uses: appleboy/ssh-action@master
-        with:
-          port: ${{ secrets.SERVER_PORT }}
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            cd /home/energet/api-configurator/
-            sudo docker compose -f docker-compose.production.yml down || exit 1
-            sudo docker compose --env-file .env.production -f docker-compose.production.yml up --build -d || exit 1
-
-      - name: Send Telegram Message
-        if: failure()
-        env:
-          MESSAGE: |
-            ❗ Произошла ошибка во время деплоя
-            
-            🔗 Ссылка на пайплайн 🔗
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      - name: Install Ansible and collections
         run: |
-          curl -s -X POST 'https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage' \
-          -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=$MESSAGE&reply_to_message_id=${{ secrets.TELEGRAM_TOPIC_ID }}"
+          python -m pip install --upgrade pip
+          pip install ansible ansible-core
 
-      - name: Send Telegram Message
-        if: success()
-        env:
-          MESSAGE: |
-            🔔 Конфигуратор API
-            ✅ Изменения успешно задеплоены
+          ansible-galaxy collection install community.general
 
-            🔗 Ссылка на прод 🔗
-            ${{ secrets.PRODUCTION_URL || 'Отсутствует' }}
+      - name: Create ansible.env with vault password and ssh key
+        working-directory: ansible
         run: |
-          curl -s -X POST 'https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage' \
-          -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=$MESSAGE&reply_to_message_id=${{ secrets.TELEGRAM_TOPIC_ID }}"
+          echo "${{ secrets.ANSIBLE_VAULT_PASSWORD }}" > ansible-password.txt
+          chmod 600 ansible-password.txt
+
+      - name: Decrypt the rest of ansible vault files
+        working-directory: ansible
+        run: |
+          ansible-vault view ssh-key.pem.vault --vault-password-file=ansible-password.txt > ssh-key.pem
+          chmod 400 ssh-key.pem
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          cp ansible/ssh-key.pem ~/.ssh/energet
+          chmod 600 ~/.ssh/energet
+          ssh-keyscan -p "${{ secrets.SERVER_PORT }}" -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Run Ansible playbook to deploy backend
+        working-directory: ansible
+        run: |
+          ansible-playbook deploy.yml \
+            -e '{
+            "server_host": "${{ secrets.SERVER_HOST }}",
+            "server_port": "${{ secrets.SERVER_PORT }}",
+            "server_user": "${{ secrets.SERVER_USER }}",
+            "telegram_chat_id": "${{ secrets.TELEGRAM_CHAT_ID }}",
+            "telegram_bot_token": "${{ secrets.TELEGRAM_TOKEN }}",
+            "telegram_topic_id": "${{ secrets.TELEGRAM_TOPIC_ID }}"
+          }'
+          

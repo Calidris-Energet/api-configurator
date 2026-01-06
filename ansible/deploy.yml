@@ -1,0 +1,71 @@
+---
+- hosts: all
+  vars:
+    backend_dir: /home/backend/api-configurator/
+
+  tasks:
+    - name: Start deployment
+      block:
+        - name: Ensure folder exists
+          file:
+            path: "{{ backend_dir }}"
+            state: directory
+            owner: "{{ ansible_user }}"
+            group: "{{ ansible_user }}"
+            mode: '0755'
+          become: yes
+
+        - name: Pull latest code and switch to main branch
+          git:
+            repo: "https://github.com/Calidris-Energet/api-configurator.git"
+            dest: "{{ backend_dir }}"
+            update: yes
+            version: main
+            force: yes
+          become: yes
+
+        - name: Run the build script
+          ansible.builtin.command:
+            cmd: docker compose -f docker-compose.production.yml up --build -d
+            chdir: "{{ backend_dir }}"
+
+        - name: Wait for server to start
+          uri:
+            url: "https://energet.shop/api/items"
+            status_code: 200
+            timeout: 10
+          register: server_health
+          retries: 10
+          delay: 5
+          until: server_health.status == 200
+
+        - name: Send notification to a specific Telegram topic
+          community.general.telegram:
+            token: "{{ telegram_bot_token }}"
+            api_method: 'sendMessage'
+            api_args:
+              chat_id: "{{ telegram_chat_id }}"
+              message_thread_id: "{{ telegram_topic_id }}"
+              text: |
+                🔔 Backend (configurator)
+                ✅ Изменения успешно задеплоены
+                
+                🔗 Ссылка 🔗
+                https://energet.shop/
+              parse_mode: 'markdown'
+
+      rescue:
+        - name: Send failure notification to Telegram
+          community.general.telegram:
+            token: "{{ telegram_bot_token }}"
+            api_method: 'sendMessage'
+            api_args:
+              chat_id: "{{ telegram_chat_id }}"
+              message_thread_id: "{{ telegram_topic_id }}"
+              text: |
+                🔔 Backend
+                ❌ *Произошла ошибка при деплое*
+                *Время:* {{ ansible_facts['date_time']['time'] }}
+                *Задача:* {{ ansible_failed_task.name }}
+              parse_mode: 'markdown'
+              disable_notification: false
